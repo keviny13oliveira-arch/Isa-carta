@@ -14,7 +14,7 @@
         const response = await fetch(pagina + '?v=6');
         if (!response.ok) throw new Error('Falha ao carregar a carta');
         let html = await response.text();
-        const scripts = '<script src="supabase-memories.js"><\\/script><script src="cloud-bridge.js"><\\/script>';
+        const scripts = '<script src="supabase-memories.js"></' + 'script><script src="cloud-bridge.js"></' + 'script>';
         html = html.replace('</head>', scripts + '</head>');
         document.open();
         document.write(html);
