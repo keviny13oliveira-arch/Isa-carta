@@ -1,4 +1,4 @@
-/* Memórias na nuvem — Isa-carta */
+/* Memórias na nuvem — Isa-carta v6 */
 const SUPABASE_URL = 'https://nhmgqktflcuwqzawfxan.supabase.co';
 const SUPABASE_PUBLIC_KEY = 'sb_publishable_mVmLJLRskPluXZwqIUDtew_tBiTYlmD';
 
@@ -8,11 +8,7 @@ const SUPABASE_PUBLIC_KEY = 'sb_publishable_mVmLJLRskPluXZwqIUDtew_tBiTYlmD';
   const TEXT_TABLE = 'text_memories';
 
   async function api(path, options = {}) {
-    const headers = Object.assign({
-      apikey: SUPABASE_PUBLIC_KEY,
-      Authorization: 'Bearer ' + SUPABASE_PUBLIC_KEY,
-      'Content-Type': 'application/json'
-    }, options.headers || {});
+    const headers = Object.assign({ apikey: SUPABASE_PUBLIC_KEY, Authorization: 'Bearer ' + SUPABASE_PUBLIC_KEY, 'Content-Type': 'application/json' }, options.headers || {});
     const response = await fetch(SUPABASE_URL + '/rest/v1/' + path, Object.assign({}, options, { headers }));
     if (!response.ok) throw new Error(await response.text());
     return response.status === 204 ? null : response.json();
@@ -33,24 +29,27 @@ const SUPABASE_PUBLIC_KEY = 'sb_publishable_mVmLJLRskPluXZwqIUDtew_tBiTYlmD';
   async function saveText(title, content) {
     return api(TEXT_TABLE, { method: 'POST', headers: { Prefer: 'return=representation' }, body: JSON.stringify({ title: title || null, content }) });
   }
-
-  async function loadTexts() {
-    return api(TEXT_TABLE + '?select=*&order=created_at.desc');
-  }
-
+  async function loadTexts() { return api(TEXT_TABLE + '?select=*&order=created_at.desc'); }
   async function savePhoto(file, caption) {
     const url = await upload(file, 'photos');
     return api(PHOTO_TABLE, { method: 'POST', headers: { Prefer: 'return=representation' }, body: JSON.stringify({ media_type: 'photo', file_url: url, caption: caption || null }) });
   }
-
   async function saveVideo(file, caption) {
     const url = await upload(file, 'videos');
     return api(PHOTO_TABLE, { method: 'POST', headers: { Prefer: 'return=representation' }, body: JSON.stringify({ media_type: 'video', file_url: url, caption: caption || null }) });
   }
+  async function loadMedia() { return api(PHOTO_TABLE + '?select=*&order=created_at.asc'); }
 
-  async function loadMedia() {
-    return api(PHOTO_TABLE + '?select=*&order=created_at.asc');
+  async function init() {
+    try {
+      const [texts, media] = await Promise.all([loadTexts(), loadMedia()]);
+      window.dispatchEvent(new CustomEvent('memories-cloud-ready', { detail: { texts, media } }));
+    } catch (error) {
+      console.error('Falha ao carregar memórias da nuvem:', error);
+      window.dispatchEvent(new CustomEvent('memories-cloud-error', { detail: error }));
+    }
   }
 
   window.MemoriesCloud = { ready: true, saveText, loadTexts, savePhoto, saveVideo, loadMedia };
+  init();
 })();
