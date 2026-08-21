@@ -1,0 +1,168 @@
+/* Ponte v6: conecta a interface atual às memórias persistentes do Supabase. */
+(function () {
+  function ready(fn) {
+    if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', fn, { once: true });
+    else fn();
+  }
+
+  function escapeText(value) { return String(value == null ? '' : value); }
+
+  function renderTexts(items) {
+    const list = document.getElementById('textList');
+    const empty = document.getElementById('textEmpty');
+    if (!list) return;
+    list.innerHTML = '';
+    (items || []).forEach(function (item) {
+      const card = document.createElement('article');
+      card.className = 'text-card';
+      const h = document.createElement('h3');
+      h.textContent = item.title || 'Uma lembrança';
+      const p = document.createElement('p');
+      p.textContent = item.content || '';
+      const small = document.createElement('small');
+      small.textContent = item.created_at ? new Date(item.created_at).toLocaleDateString('pt-BR') : '';
+      card.append(h, p, small);
+      list.appendChild(card);
+    });
+    if (empty) empty.style.display = (items && items.length) ? 'none' : 'block';
+  }
+
+  function renderCloudMedia(items) {
+    const grid = document.querySelector('.photo-grid');
+    const videoPreview = document.getElementById('videoPreview');
+    if (!grid) return;
+    (items || []).forEach(function (item) {
+      if (!item.file_url || item.media_type === 'photo') {
+        if (!item.file_url) return;
+        const article = document.createElement('article');
+        article.className = 'photo-card';
+        const img = document.createElement('img');
+        img.alt = item.caption || 'Foto';
+        img.src = item.file_url;
+        img.loading = 'lazy';
+        img.tabIndex = 0;
+        img.onclick = function () { if (typeof abrirFoto === 'function') abrirFoto(img.src); };
+        article.appendChild(img);
+        const cap = document.createElement('div');
+        cap.className = 'photo-caption';
+        cap.textContent = item.caption || '';
+        article.appendChild(cap);
+        grid.appendChild(article);
+      }
+    });
+
+    if (videoPreview) {
+      const videos = (items || []).filter(function (x) { return x.media_type === 'video' && x.file_url; });
+      if (videos.length) {
+        videoPreview.innerHTML = '';
+        videos.forEach(function (item) {
+          const wrap = document.createElement('div');
+          wrap.style.marginTop = '12px';
+          const video = document.createElement('video');
+          video.controls = true;
+          video.playsInline = true;
+          video.preload = 'metadata';
+          video.src = item.file_url;
+          wrap.appendChild(video);
+          if (item.caption) {
+            const cap = document.createElement('div');
+            cap.className = 'photo-caption';
+            cap.textContent = item.caption;
+            wrap.appendChild(cap);
+          }
+          videoPreview.appendChild(wrap);
+        });
+      }
+    }
+  }
+
+  ready(function () {
+    if (!window.MemoriesCloud) {
+      console.warn('MemoriesCloud não carregado.');
+      return;
+    }
+
+    window.carregarTextos = async function () {
+      try { renderTexts(await window.MemoriesCloud.loadTexts()); }
+      catch (e) { console.error(e); }
+    };
+
+    window.salvarTexto = async function () {
+      const titulo = document.getElementById('textoTitulo');
+      const conteudo = document.getElementById('textoConteudo');
+      if (!conteudo || !conteudo.value.trim()) { alert('Escreva algum texto antes de salvar.'); return; }
+      const btn = document.querySelector('#textoForm button[onclick*="salvarTexto"]');
+      if (btn) { btn.disabled = true; btn.textContent = 'Salvando...'; }
+      try {
+        await window.MemoriesCloud.saveText(titulo ? titulo.value.trim() : '', conteudo.value.trim());
+        if (titulo) titulo.value = '';
+        conteudo.value = '';
+        if (typeof toggleTextoForm === 'function') toggleTextoForm();
+        await window.carregarTextos();
+      } catch (e) {
+        console.error(e);
+        alert('Não foi possível salvar o texto na nuvem. Verifique as políticas do Supabase.');
+      } finally {
+        if (btn) { btn.disabled = false; btn.textContent = 'Salvar texto'; }
+      }
+    };
+
+    window.inserirVideo = async function (event) {
+      const arquivo = event.target.files && event.target.files[0];
+      if (!arquivo) return;
+      if (!arquivo.type.startsWith('video/')) { alert('Escolha um arquivo de vídeo.'); return; }
+      try {
+        const caption = prompt('Quer adicionar uma legenda para este vídeo?') || '';
+        const preview = document.getElementById('videoPreview');
+        if (preview) preview.innerHTML = '<p>Enviando vídeo para a nuvem...</p>';
+        await window.MemoriesCloud.saveVideo(arquivo, caption);
+        const media = await window.MemoriesCloud.loadMedia();
+        renderCloudMedia(media);
+        alert('Vídeo salvo na nuvem!');
+      } catch (e) {
+        console.error(e);
+        alert('Não foi possível enviar o vídeo. Verifique o Storage e as políticas do Supabase.');
+      } finally { event.target.value = ''; }
+    };
+
+    window.mostrarAvisoUploadFoto = function () {
+      let input = document.getElementById('cloudPhotoInput');
+      if (!input) {
+        input = document.createElement('input');
+        input.id = 'cloudPhotoInput';
+        input.type = 'file';
+        input.accept = 'image/*';
+        input.hidden = true;
+        document.body.appendChild(input);
+        input.addEventListener('change', async function (event) {
+          const file = event.target.files && event.target.files[0];
+          if (!file) return;
+          try {
+            const caption = prompt('Quer adicionar uma legenda para esta foto?') || '';
+            await window.MemoriesCloud.savePhoto(file, caption);
+            const media = await window.MemoriesCloud.loadMedia();
+            renderCloudMedia(media);
+            alert('Foto salva na nuvem!');
+          } catch (e) {
+            console.error(e);
+            alert('Não foi possível enviar a foto. Verifique o Storage e as políticas do Supabase.');
+          } finally { input.value = ''; }
+        });
+      }
+      input.click();
+    };
+
+    window.addEventListener('memories-cloud-ready', function (event) {
+      const data = event.detail || {};
+      renderTexts(data.texts || []);
+      renderCloudMedia(data.media || []);
+    });
+
+    window.addEventListener('memories-cloud-error', function () {
+      console.warn('A nuvem não pôde ser carregada; a carta continua funcionando localmente.');
+    });
+
+    window.MemoriesCloud.loadTexts().then(renderTexts).catch(console.error);
+    window.MemoriesCloud.loadMedia().then(renderCloudMedia).catch(console.error);
+  });
+})();
