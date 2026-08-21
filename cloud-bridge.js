@@ -1,11 +1,9 @@
-/* Ponte v6: conecta a interface atual às memórias persistentes do Supabase. */
+/* Ponte v7: interface atual + memórias persistentes do Supabase. */
 (function () {
   function ready(fn) {
     if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', fn, { once: true });
     else fn();
   }
-
-  function escapeText(value) { return String(value == null ? '' : value); }
 
   function renderTexts(items) {
     const list = document.getElementById('textList');
@@ -21,7 +19,25 @@
       p.textContent = item.content || '';
       const small = document.createElement('small');
       small.textContent = item.created_at ? new Date(item.created_at).toLocaleDateString('pt-BR') : '';
-      card.append(h, p, small);
+
+      const actions = document.createElement('div');
+      actions.className = 'text-card-actions';
+      actions.style.cssText = 'display:flex;gap:8px;flex-wrap:wrap;margin-top:12px';
+
+      const edit = document.createElement('button');
+      edit.type = 'button';
+      edit.className = 'add-btn';
+      edit.textContent = '✏️ Editar';
+      edit.onclick = function () { editarTexto(item); };
+
+      const remove = document.createElement('button');
+      remove.type = 'button';
+      remove.className = 'nav-btn';
+      remove.textContent = '🗑️ Excluir';
+      remove.onclick = function () { excluirTexto(item); };
+
+      actions.append(edit, remove);
+      card.append(h, p, small, actions);
       list.appendChild(card);
     });
     if (empty) empty.style.display = (items && items.length) ? 'none' : 'block';
@@ -31,30 +47,32 @@
     const grid = document.querySelector('.photo-grid');
     const videoPreview = document.getElementById('videoPreview');
     if (!grid) return;
+
+    const existingCloud = grid.querySelectorAll('.cloud-memory-card');
+    existingCloud.forEach(function (node) { node.remove(); });
+
     (items || []).forEach(function (item) {
-      if (!item.file_url || item.media_type === 'photo') {
-        if (!item.file_url) return;
-        const article = document.createElement('article');
-        article.className = 'photo-card';
-        const img = document.createElement('img');
-        img.alt = item.caption || 'Foto';
-        img.src = item.file_url;
-        img.loading = 'lazy';
-        img.tabIndex = 0;
-        img.onclick = function () { if (typeof abrirFoto === 'function') abrirFoto(img.src); };
-        article.appendChild(img);
-        const cap = document.createElement('div');
-        cap.className = 'photo-caption';
-        cap.textContent = item.caption || '';
-        article.appendChild(cap);
-        grid.appendChild(article);
-      }
+      if (!item.file_url || item.media_type !== 'photo') return;
+      const article = document.createElement('article');
+      article.className = 'photo-card cloud-memory-card';
+      const img = document.createElement('img');
+      img.alt = item.caption || 'Foto';
+      img.src = item.file_url;
+      img.loading = 'lazy';
+      img.tabIndex = 0;
+      img.onclick = function () { if (typeof abrirFoto === 'function') abrirFoto(img.src); };
+      article.appendChild(img);
+      const cap = document.createElement('div');
+      cap.className = 'photo-caption';
+      cap.textContent = item.caption || '';
+      article.appendChild(cap);
+      grid.appendChild(article);
     });
 
     if (videoPreview) {
       const videos = (items || []).filter(function (x) { return x.media_type === 'video' && x.file_url; });
+      videoPreview.innerHTML = '';
       if (videos.length) {
-        videoPreview.innerHTML = '';
         videos.forEach(function (item) {
           const wrap = document.createElement('div');
           wrap.style.marginTop = '12px';
@@ -74,6 +92,20 @@
         });
       }
     }
+  }
+
+  function corrigirPortuguesDaCarta() {
+    const carta = document.getElementById('carta');
+    if (!carta) return;
+    const trocar = function () {
+      if (carta.textContent.indexOf('Because amar você') !== -1) {
+        carta.textContent = carta.textContent.replace('Because amar você', 'Porque amar você');
+      }
+    };
+    trocar();
+    const observer = new MutationObserver(trocar);
+    observer.observe(carta, { childList: true, characterData: true, subtree: true });
+    setTimeout(function () { observer.disconnect(); trocar(); }, 30000);
   }
 
   ready(function () {
@@ -101,9 +133,56 @@
         await window.carregarTextos();
       } catch (e) {
         console.error(e);
-        alert('Não foi possível salvar o texto na nuvem. Verifique as políticas do Supabase.');
+        alert('Não foi possível salvar o texto na nuvem.');
       } finally {
         if (btn) { btn.disabled = false; btn.textContent = 'Salvar texto'; }
+      }
+    };
+
+    window.editarTexto = function (item) {
+      const titulo = document.getElementById('textoTitulo');
+      const conteudo = document.getElementById('textoConteudo');
+      const form = document.getElementById('textoForm');
+      if (!titulo || !conteudo || !form) return;
+      titulo.value = item.title || '';
+      conteudo.value = item.content || '';
+      form.classList.add('open');
+      window.__textoEditandoId = item.id;
+      const btn = document.querySelector('#textoForm button[onclick*="salvarTexto"]');
+      if (btn) btn.textContent = 'Salvar alterações';
+      form.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    };
+
+    const salvarOriginal = window.salvarTexto;
+    window.salvarTexto = async function () {
+      if (!window.__textoEditandoId) return salvarOriginal();
+      const titulo = document.getElementById('textoTitulo');
+      const conteudo = document.getElementById('textoConteudo');
+      if (!conteudo || !conteudo.value.trim()) { alert('Escreva algum texto antes de salvar.'); return; }
+      try {
+        await window.MemoriesCloud.updateText(window.__textoEditandoId, titulo ? titulo.value.trim() : '', conteudo.value.trim());
+        window.__textoEditandoId = null;
+        if (titulo) titulo.value = '';
+        conteudo.value = '';
+        if (typeof toggleTextoForm === 'function') toggleTextoForm();
+        const btn = document.querySelector('#textoForm button[onclick*="salvarTexto"]');
+        if (btn) btn.textContent = 'Salvar texto';
+        await window.carregarTextos();
+      } catch (e) {
+        console.error(e);
+        alert('Não foi possível editar o texto na nuvem.');
+      }
+    };
+
+    window.excluirTexto = async function (item) {
+      if (!item || !item.id) return;
+      if (!confirm('Excluir este texto? Essa ação não pode ser desfeita.')) return;
+      try {
+        await window.MemoriesCloud.deleteText(item.id);
+        await window.carregarTextos();
+      } catch (e) {
+        console.error(e);
+        alert('Não foi possível excluir o texto.');
       }
     };
 
@@ -116,12 +195,11 @@
         const preview = document.getElementById('videoPreview');
         if (preview) preview.innerHTML = '<p>Enviando vídeo para a nuvem...</p>';
         await window.MemoriesCloud.saveVideo(arquivo, caption);
-        const media = await window.MemoriesCloud.loadMedia();
-        renderCloudMedia(media);
+        renderCloudMedia(await window.MemoriesCloud.loadMedia());
         alert('Vídeo salvo na nuvem!');
       } catch (e) {
         console.error(e);
-        alert('Não foi possível enviar o vídeo. Verifique o Storage e as políticas do Supabase.');
+        alert('Não foi possível enviar o vídeo. Detalhes: ' + (e.message || e));
       } finally { event.target.value = ''; }
     };
 
@@ -140,12 +218,11 @@
           try {
             const caption = prompt('Quer adicionar uma legenda para esta foto?') || '';
             await window.MemoriesCloud.savePhoto(file, caption);
-            const media = await window.MemoriesCloud.loadMedia();
-            renderCloudMedia(media);
+            renderCloudMedia(await window.MemoriesCloud.loadMedia());
             alert('Foto salva na nuvem!');
           } catch (e) {
             console.error(e);
-            alert('Não foi possível enviar a foto. Verifique o Storage e as políticas do Supabase.');
+            alert('Não foi possível enviar a foto. Detalhes: ' + (e.message || e));
           } finally { input.value = ''; }
         });
       }
@@ -158,11 +235,12 @@
       renderCloudMedia(data.media || []);
     });
 
-    window.addEventListener('memories-cloud-error', function () {
-      console.warn('A nuvem não pôde ser carregada; a carta continua funcionando localmente.');
+    window.addEventListener('memories-cloud-error', function (event) {
+      console.warn('A nuvem não pôde ser carregada:', event.detail || 'erro desconhecido');
     });
 
     window.MemoriesCloud.loadTexts().then(renderTexts).catch(console.error);
     window.MemoriesCloud.loadMedia().then(renderCloudMedia).catch(console.error);
+    corrigirPortuguesDaCarta();
   });
 })();
