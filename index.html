@@ -3,13 +3,27 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <meta http-equiv="refresh" content="0; url=Para_Minha_Futura_Esposa_v5_Safari_Nuvem.html">
   <title>Para minha futura esposa 💗</title>
 </head>
 <body>
   <p>Abrindo a carta…</p>
   <script>
-    window.location.replace('Para_Minha_Futura_Esposa_v5_Safari_Nuvem.html');
+    (async function () {
+      const pagina = 'Para_Minha_Futura_Esposa_v5_Safari_Nuvem.html';
+      try {
+        const response = await fetch(pagina + '?v=6');
+        if (!response.ok) throw new Error('Falha ao carregar a carta');
+        let html = await response.text();
+        const scripts = '<script src="supabase-memories.js"><\\/script><script src="cloud-bridge.js"><\\/script>';
+        html = html.replace('</head>', scripts + '</head>');
+        document.open();
+        document.write(html);
+        document.close();
+      } catch (error) {
+        console.error(error);
+        window.location.replace(pagina);
+      }
+    })();
   </script>
 </body>
 </html>
